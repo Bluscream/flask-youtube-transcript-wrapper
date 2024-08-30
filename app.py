@@ -1,6 +1,6 @@
 from ast import match_case
 import os
-from flask import Flask, request, jsonify, Response
+from flask import Flask, debughelpers, request, jsonify, Response
 from typing import Dict, Any
 import time
 from functools import wraps
@@ -14,9 +14,6 @@ from youtube_transcript_api._errors import NoTranscriptFound
 
 RATE_LIMIT = int(os.getenv('RATE_LIMIT', '60'))  # Requests per minute
 MAX_VIDEOS = int(os.getenv('MAX_VIDEOS', '100'))
-MAX_REQUESTS = RATE_LIMIT * 60  # Total requests per hour
-
-app = Flask(__name__)
 
 formatters: dict[str, Formatter] = {
     'json': JSONFormatter(),
@@ -25,24 +22,28 @@ formatters: dict[str, Formatter] = {
     'srt': SRTFormatter()
 }
 
-def is_local_ip(ip):
-    """Check if the IP address is a local network address."""
-    return ip.startswith(('192.168.', '10.')) or IPv4Address(ip).is_loopback
-def rate_limited(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        ip_address = request.remote_addr
-        last_request_time = cache.get(ip_address, 0)
-        current_time = time.time()
+# region ratelimits
+MAX_REQUESTS = RATE_LIMIT * 60  # Total requests per hour
+# def is_local_ip(ip):
+#     """Check if the IP address is a local network address."""
+#     return ip.startswith(('192.168.', '10.')) or IPv4Address(ip).is_loopback
+# def rate_limited(f):
+#     @wraps(f)
+#     def decorated(*args, **kwargs):
+#         ip_address = request.remote_addr
+#         last_request_time = cache.get(ip_address, 0)
+#         current_time = time.time()
 
-        if not is_local_ip(ip_address):  # Only apply rate limiting to non-local IPs
-            if current_time - last_request_time < MAX_REQUESTS / RATE_LIMIT:
-                return process({"results": {}, "errors": [f"Rate limit exceeded. Try again later."]}), 429
+#         if not is_local_ip(ip_address):  # Only apply rate limiting to non-local IPs
+#             if current_time - last_request_time < MAX_REQUESTS / RATE_LIMIT:
+#                 return process({"results": {}, "errors": [f"Rate limit exceeded. Try again later."]}), 429
 
-        cache[ip_address] = current_time
-        return f(*args, **kwargs)
-    return decorated
+#         cache[ip_address] = current_time
+#         return f(*args, **kwargs)
+#     return decorated
+# endregion ratelimits
 
+#region transcript
 def trans_dict(transcript: Transcript, formats: list[str]):
     ret = {
         # 'id': transcript.video_id,
@@ -58,13 +59,17 @@ def trans_dict(transcript: Transcript, formats: list[str]):
         raw = transcript.fetch()
         if 'raw' in formats: ret["content"]['raw'] = raw
         for name, fmt in formatters.items():
-            fmted = str(fmt.format_transcript(transcript))
-            if name in formats: ret["content"][fmt] = fmted
-
+            fmted = str(fmt.format_transcript(raw))
+            print("name in formats:", name in formats)
+            if name in formats: ret["content"][name] = fmted
+    # raise Exception("debug")
     return ret
 
 def process(object):
-    return jsonify(object) # dumps(dict(iter(object)), indent=True)
+    try: return jsonify(object)
+    except:
+        try: return dumps(object)
+        except: return dumps(dict(iter(object)), indent=True)
 
 def add_transcript(transcript_dict: dict[str, object], video_id: str, transcript: Transcript, formats: list[str]):
     transcript_dict.update({
@@ -107,18 +112,23 @@ def get_transcript(_video_id: str, _lang: str, _format: str):
         case "vtt": return FileResponse(formatters["vtt"].format_transcript(transcript), 200, "text/vtt", filename)
         case "txt": return FileResponse(formatters["txt"].format_transcript(transcript), 200, "text/plain", filename)
     return "unknown format", 400
+#endregion transcript
 
+#region flask
+app = Flask(__name__)
 @app.route('/', methods=['GET'])
-@rate_limited
-def get_transcripts():
+# @rate_limited
+def get_transcripts(videoIds = [], videoId = "", formats = [], format = "", langs = [], lang = "", raw = False):
     ret: Dict[str, Any] = {"results": {}, "errors": []}
     
     # try:
     _video_ids = request.args.get('videoIds', "")
     _video_id = request.args.get('videoId')
     _formats = request.args.get('formats', "")
-    _format = request.args.get('format')
-    _lang = request.args.get('lang')
+    print("_formats", _formats)
+    _format = request.args.get('format',)
+    print("_format", _format)
+    _lang = request.args.get('lang', "")
     raw = request.args.get('raw', "")
     print(raw)
     if raw:
@@ -134,7 +144,7 @@ def get_transcripts():
 
     if _formats: _formats = _formats.split(',')
     if not _formats and _format: _formats = [request.args.get('format')]
-    if not _formats: _formats = [formatters.keys()]
+    if not _formats: _formats = [*formatters]
     pprint(_formats)
 
     if not _video_ids or len(_video_ids) < 1: raise Exception("No video IDs provided")
@@ -155,6 +165,7 @@ def get_transcripts():
     #     print("error", e)
     #     ret["errors"] += {str(e): ""}
     #     return process(ret), 200
+# endregion flask
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True,host="0.0.0.0",port=5001)
