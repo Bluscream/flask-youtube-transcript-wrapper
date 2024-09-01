@@ -107,7 +107,7 @@ def get_transcript(_video_id: str, _lang: str, _format: str):
     filename = f"{_video_id} - {_lang}.{_format}"
     match _format:
         case "raw": return jsonify(transcript.fetch()), 200
-        case "json": return jsonify(formatters["json"].format_transcript(transcript)), 200
+        case "json": return FileResponse(formatters["json"].format_transcript(transcript), 200, "application/json", filename)
         case "srt": return FileResponse(formatters["srt"].format_transcript(transcript), 200, "application/x-subrip", filename)
         case "vtt": return FileResponse(formatters["vtt"].format_transcript(transcript), 200, "text/vtt", filename)
         case "txt": return FileResponse(formatters["txt"].format_transcript(transcript), 200, "text/plain", filename)
