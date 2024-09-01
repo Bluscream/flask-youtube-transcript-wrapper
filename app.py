@@ -49,7 +49,8 @@ def trans_dict(transcript: Transcript, formats: list[str]):
         'is_generated': transcript.is_generated,
         'is_translatable': transcript.is_translatable,
         # 'translation_languages': transcript.translation_languages,
-        'url': transcript._url,
+        'url': f"https://ytapi.minopia.de/transcript?videoId={transcript.video_id}&lang={transcript.language_code}",
+        '_url': transcript._url,
         'content': {}
     }
     if len(formats) > 0:
