@@ -44,8 +44,8 @@ def rate_limited(f):
 def trans_dict(transcript: Transcript, formats: list[str]):
     ret = {
         # 'id': transcript.video_id,
-        'language': transcript.language,
-        # 'language_code': transcript.language_code,
+        # 'language': transcript.language,
+        'language_code': transcript.language_code,
         'is_generated': transcript.is_generated,
         'is_translatable': transcript.is_translatable,
         # 'translation_languages': transcript.translation_languages,
