@@ -41,25 +41,35 @@ def rate_limited(f):
         return f(*args, **kwargs)
     return decorated
 
-def trans_dict(transcript: Transcript, formats: list[str]):
+def trans_dict_manual(video_id, language_code, is_generated, is_translatable, is_translated):
+    ret = {
+        'language_code': language_code,
+        'is_generated': is_generated,
+        'is_translatable': is_translatable,
+        'is_translated': is_translated,
+        'url': f"https://ytapi.minopia.de/transcript?videoId={video_id}&lang={language_code}"
+    }
+    return ret
+
+def trans_dict(transcript: Transcript, formats: list[str], is_translated = False):
     ret = {
         # 'id': transcript.video_id,
         # 'language': transcript.language,
         'language_code': transcript.language_code,
         'is_generated': transcript.is_generated,
         'is_translatable': transcript.is_translatable,
+        'is_translated': is_translated,
         # 'translation_languages': transcript.translation_languages,
         'url': f"https://ytapi.minopia.de/transcript?videoId={transcript.video_id}&lang={transcript.language_code}",
-        '_url': transcript._url,
-        'content': {}
+        '_url': transcript._url
     }
     if len(formats) > 0:
+        ret["content"] = {}
         raw = transcript.fetch()
         if 'raw' in formats: ret["content"]['raw'] = raw
         for name, fmt in formatters.items():
             fmted = str(fmt.format_transcript(raw))
             if name in formats: ret["content"][fmt] = fmted
-
     return ret
 
 def process(object):
@@ -78,13 +88,17 @@ def add_video(ret_dict: dict, video_id: str, formats: list[str], translate_langs
     transcript: Transcript
     for transcript in transcripts:
         add_transcript(transcript_dict, video_id, transcript, formats)
-    for name, code in translate_langs:
-        if translate_force or not name in transcript_dict.keys():
-            first: Transcript = transcripts[0]
-            # print("Want translation! First", first.language,"is translatable:",first.is_translatable)
-            if first.is_translatable:
-                translated = first.translate(code)
-                add_transcript(transcript_dict, video_id, translated, formats)
+    for transcript in transcripts:
+        for lang in transcript.translation_languages:
+            if lang['language_code'] not in [t['language_code'] for t in transcript_dict.values()]:
+                transcript_dict.update({lang["language"] + " (auto-translated)": trans_dict_manual(video_id, lang['language_code'], False, False, True)})
+    # for name, code in translate_langs:
+    #     if translate_force or not name in transcript_dict.keys():
+    #         first: Transcript = transcripts[0]
+    #         # print("Want translation! First", first.language,"is translatable:",first.is_translatable)
+    #         if first.is_translatable:
+    #             translated = first.translate(code)
+    #             add_transcript(transcript_dict, video_id, translated, formats)
     # print(len(transcript_dict))
     if ret_dict: ret_dict["results"][video_id] = transcript_dict
     return transcript_dict
@@ -138,7 +152,7 @@ def get_transcripts():
 
     if _formats: _formats = _formats.split(',')
     if not _formats and _format: _formats = [request.args.get('format')]
-    if not _formats: _formats = [formatters.keys()]
+    if not _formats: _formats = [] # [formatters.keys()]
 
     if not _video_ids or len(_video_ids) < 1: raise Exception("No video IDs provided")
     if len(_video_ids) > MAX_VIDEOS: raise Exception("Too many video IDs provided")
